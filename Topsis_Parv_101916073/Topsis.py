@@ -1,8 +1,6 @@
-import numpy as np
 import pandas as pd
 import os
 import sys
-import logging
 
 """=============================================================================
 #  Author:          Parv Gupta - https://github.com/parvg555/
@@ -11,136 +9,90 @@ import logging
 #  Created On:      23/02/2022 4:42AM
 ============================================================================="""
 
-logging.basicConfig(filename='101916073-log.log',filemode='w',format='%(name)s - %(levelname)s - %(message)s')
+def main():
+    if not os.path.isfile(sys.argv[1]):
+        print(f"{sys.argv[1]} Don't exist!!")
+        exit(1)
 
-if not len(sys.argv)>4:
-    logging.error("EXPECTED 4 ARGUMENTS")
-    print("EXPECTED 4 ARGUMENTS")
-    sys.exit()
+    if ".csv" != (os.path.splitext(sys.argv[1]))[1]:
+        print(f"{sys.argv[1]} is not csv!!")
+        exit(1)
 
-if not os.path.exists(sys.argv[1]):
-    logging.error("FILE NOT FOUND")
-    print("FILE NOT FOUND")
-    sys.exit()
+    else:
+        dataset, temp_dataset = pd.read_csv(
+            sys.argv[1]), pd.read_csv(sys.argv[1])
+        nCol = len(temp_dataset.columns.values)
 
-def handleNonNumericValues(dataset,numberOfColumns):
-    for i in range(1,numberOfColumns):
-        pd.to_numeric(dataset.iloc[:,i],errors='coerce')
-        dataset.iloc[:,i].fillna((dataset.iloc[:,i].mean()),inplace=True)
-    return dataset
+        if nCol < 3:
+            print("Input file have less then 3 columns")
+            exit(1)
 
-def gettingAndCheckingWeights():
-    try:
-        weights=[int(i) for i in sys.argv[2].split(',')]
-        return weights
-    except:
-        logging.error("expected weights array")
-        print("expected weights array")
-        sys.exit()
+        for i in range(1, nCol):
+            pd.to_numeric(dataset.iloc[:, i], errors='coerce')
+            dataset.iloc[:, i].fillna(
+                (dataset.iloc[:, i].mean()), inplace=True)
 
-def gettingAndCheckingImpacts():
-    try:
-        impacts=sys.argv[3].split(',')
-        for i in impacts:
-            if not (i=='+' or i=='-'):
-                logging.error("expected + or - in impact array")
-                print("expected + or - in impact array")
-                sys.exit()
-        return impacts
-    except:
-        logging.error("expected impact array")
-        print("expected impact array")
-        sys.exit()
+        try:
+            weights = [int(i) for i in sys.argv[2].split(',')]
+        except:
+            print("In weights array please check again")
+            exit(1)
+        impact = sys.argv[3].split(',')
+        for i in impact:
+            if not (i == '+' or i == '-'):
+                print("In impact array please check again")
+                exit(1)
+
+        if nCol != len(weights)+1 or nCol != len(impact)+1:
+            print(
+                "Number of weights, number of impacts and number of columns not same")
+            exit(1)
+
+        if (".csv" != (os.path.splitext(sys.argv[4]))[1]):
+            print("Output file extension is wrong")
+            exit(1)
+        if os.path.isfile(sys.argv[4]):
+            os.remove(sys.argv[4])
+        topsis_pipy(temp_dataset, dataset, nCol, weights, impact)
 
 
-def checkColumns(weights, impacts, numberOfColumns):
-    if (numberOfColumns-1)!=len(weights):
-        logging.error("incorrect number of weights")
-        print("incorrect number of weights")
-        return False
-    if (numberOfColumns-1)!=len(impacts):
-        logging.error("incorrect number of impacts")
-        print("incorrect number of impacts")
-        return False
-    return True
-    
-def normalizeData(tempDataset,numberOfColumns,weights):
-    for i in range(1,numberOfColumns):
-        temp=0
-        for j in range(len(tempDataset)):
-            temp+=tempDataset.iloc[j,i]**2
-        temp**=0.5
-        for j in range(len(tempDataset)):
-            tempDataset.iat[j,i]=(tempDataset.iloc[j,i]/temp)*weights[i-1]
-    return tempDataset
+def Normalize(temp_dataset, nCol, weights):
+    for i in range(1, nCol):
+        temp = 0
+        for j in range(len(temp_dataset)):
+            temp = temp + temp_dataset.iloc[j, i]**2
+        temp = temp**0.5
+        for j in range(len(temp_dataset)):
+            temp_dataset.iat[j, i] = (
+                temp_dataset.iloc[j, i] / temp)*weights[i-1]
+    return temp_dataset
 
-def introduceImpacts(tempDataset,numberofColumns,impacts):
-    positiveSolution=(tempDataset.max().values)[1:]
-    negativeSolution=(tempDataset.min().values)[1:]
-    for i in range(1,numberofColumns):
-        if impacts[i-1]=='-':
-            positiveSolution[i-1],negativeSolution[i-1]=negativeSolution[i-1],positiveSolution[i-1]
-    return positiveSolution,negativeSolution
 
-def Topsis(dataset,numberOfColumns,weights,impacts):
-    #checking if number of columns provided is correct
-    if not len(dataset.columns.values)==numberOfColumns:
-        logging.error("incorrect number of columns")
-        print("incorrect number of columns")
-        sys.exit()
-    # checking columns
-    if not checkColumns(weights,impacts,numberOfColumns):
-        sys.exit()
-    # making a copy of data
-    tempData=dataset
-    # normalizing the data
-    tempData=normalizeData(tempData,numberOfColumns,weights)
-    # getting positive and negtive values
-    positiveSolution,negativeSolution=introduceImpacts(tempData,numberOfColumns,impacts)
-    # generating topsis score
-    topsisScore=[]
-    for i in range(len(tempData)):
-        tempPositive,tempNegative=0,0
-        for j in range(1,numberOfColumns):
-            tempPositive+=(positiveSolution[j-1]-tempData.iloc[i,j])**2
-            tempNegative+=(negativeSolution[j-1]-tempData.iloc[i,j])**2
-        tempPositive,tempNegative=tempPositive**0.5,tempNegative**0.5
-        topsisScore.append(tempNegative/(tempPositive+tempNegative))
-    dataset['Topsis Score']=topsisScore
-    # calculating rank accordingly
-    dataset['Rank']=(dataset['Topsis Score'].rank(method='max',ascending=False))
-    dataset=dataset.astype({"Rank":int})
-    dataset.to_csv(sys.argv[4],index=False)
+def Calc_Values(temp_dataset, nCol, impact):
+    p_sln = (temp_dataset.max().values)[1:]
+    n_sln = (temp_dataset.min().values)[1:]
+    for i in range(1, nCol):
+        if impact[i-1] == '-':
+            p_sln[i-1], n_sln[i-1] = n_sln[i-1], p_sln[i-1]
+    return p_sln, n_sln
 
-def gettingDataFromCSV():
-    # Importing the Datasets
-    dataset=pd.read_csv(sys.argv[1])
 
-    # Getting number of columns
-    numberOfColumns=len(dataset.columns.values)
-
-    # Handling non-numeric values
-    dataset=handleNonNumericValues(dataset,numberOfColumns)
-    
-    # Getting weights for various features
-    weights=gettingAndCheckingWeights()
-    
-    # Getting impact for various features
-    impacts=gettingAndCheckingImpacts()
-
-    # Checking number of columns matches data
-    if not checkColumns(weights,impacts,numberOfColumns):
-        sys.exit()
-    
-    # Checking output file name and exists
-    if((os.path.splitext(sys.argv[4]))[1]!=".csv"):
-        logging.log("expected a csv output filename")
-        print("expected a csv output filename")
-        sys.exit()
-    if(os.path.isfile(sys.argv[4])):
-        os.remove(sys.argv[4])
-    # Calling the main topsis function
-    Topsis(dataset,numberOfColumns,weights,impacts)
+def topsis_pipy(temp_dataset, dataset, nCol, weights, impact):
+    temp_dataset = Normalize(temp_dataset, nCol, weights)
+    p_sln, n_sln = Calc_Values(temp_dataset, nCol, impact)
+    score = []
+    for i in range(len(temp_dataset)):
+        temp_p, temp_n = 0, 0
+        for j in range(1, nCol):
+            temp_p = temp_p + (p_sln[j-1] - temp_dataset.iloc[i, j])**2
+            temp_n = temp_n + (n_sln[j-1] - temp_dataset.iloc[i, j])**2
+        temp_p, temp_n = temp_p**0.5, temp_n**0.5
+        score.append(temp_n/(temp_p + temp_n))
+    dataset['Topsis Score'] = score
+    dataset['Rank'] = (dataset['Topsis Score'].rank(
+        method='max', ascending=False))
+    dataset = dataset.astype({"Rank": int})
+    dataset.to_csv(sys.argv[4], index=False)
 
 if __name__ == "__main__":
-    gettingDataFromCSV()
+    main()
